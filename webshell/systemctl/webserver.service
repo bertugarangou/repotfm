@@ -1,0 +1,12 @@
+[Unit]
+Description=Flask Web Server
+After=network.target
+
+[Service]
+User=webserver
+WorkingDirectory=/var/www/html
+ExecStart=/usr/bin/python3 /var/www/html/run.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
