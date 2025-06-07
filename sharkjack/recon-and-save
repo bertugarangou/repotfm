@@ -1,0 +1,99 @@
+#!/bin/bash
+# SharkJack Payload - VLAN, DHCP, LLDP Neighbors, Switch Name, and Port Number
+# Author: Carquinyolis + doc oficial
+# Ultima edició: 28/1/2025
+# Versio 0.1
+
+# Set LED indicators for status
+LED SETUP
+echo "[*] Initializing payload..."
+
+# Enable networking
+NETMODE DHCP_CLIENT
+LED ATTACK
+echo "[*] Network mode set to DHCP_CLIENT. Acquiring IP..."
+
+# Set DHCP timeout (e.g., 15 seconds)
+DHCP_TIMEOUT=15
+DHCP_START_TIME=$(date +%s)
+
+# Wait for IP assignment with timeout
+IP_ADDR=""
+while ! ifconfig eth0 | grep "inet addr"; do
+  sleep 1
+  if [ $(($(date +%s) - DHCP_START_TIME)) -ge $DHCP_TIMEOUT ]; then
+    echo "[!] DHCP timeout reached. No IP address obtained."
+    break
+  fi
+done
+
+# Get assigned IP address (if any)
+IP_ADDR=$(ifconfig eth0 | grep "inet addr" | awk '{print $2}' | cut -d: -f2)
+if [ -z "$IP_ADDR" ]; then
+  IP_ADDR="No IP address assigned (DHCP timeout)"
+fi
+echo "[*] IP Address: $IP_ADDR"
+
+# Identify VLAN ID
+VLAN_ID=$(cat /proc/net/vlan/config | grep "eth0" | awk '{print $2}')
+if [ -z "$VLAN_ID" ]; then
+  VLAN_ID="No VLAN ID detected"
+fi
+echo "[*] VLAN ID: $VLAN_ID"
+
+# Search for LLDP neighbors
+echo "[*] Searching for LLDP neighbors..."
+lldpcli show neighbors > /root/loot/lldp_neighbors.txt
+if [ -s /root/loot/lldp_neighbors.txt ]; then
+  echo "[*] LLDP Neighbors Found:"
+  cat /root/loot/lldp_neighbors.txt
+else
+  echo "[!] No LLDP neighbors found."
+  echo "No LLDP neighbors found." > /root/loot/lldp_neighbors.txt
+fi
+
+# Prompt for switch name
+LED SPECIAL
+echo "[*] Enter the switch name (or type 'exit' to quit):"
+while :; do
+  read -p "Switch Name: " SWITCH_NAME
+  if [ "$SWITCH_NAME" == "exit" ]; then
+    echo "[*] Exiting..."
+    exit 0
+  elif [[ -n "$SWITCH_NAME" ]]; then
+    echo "Switch Name Entered: $SWITCH_NAME"
+    break
+  else
+    echo "[!] Invalid input. Please enter a valid switch name."
+  fi
+done
+
+# Output results to USB terminal and loot file
+OUTPUT_FILE="/root/loot/output.txt"
+echo "-----------------------------" > "$OUTPUT_FILE"
+echo "IP Address: $IP_ADDR" >> "$OUTPUT_FILE"
+echo "VLAN ID: $VLAN_ID" >> "$OUTPUT_FILE"
+echo "Switch Name: $SWITCH_NAME" >> "$OUTPUT_FILE"
+echo "LLDP Neighbors:" >> "$OUTPUT_FILE"
+cat /root/loot/lldp_neighbors.txt >> "$OUTPUT_FILE"
+echo "-----------------------------" >> "$OUTPUT_FILE"
+cat "$OUTPUT_FILE"
+echo "[*] Results saved to $OUTPUT_FILE"
+
+# Prompt user for a port number
+LED FINISH
+echo "[*] Enter a port number to output (or type 'exit' to quit):"
+while :; do
+  read -p "Port Number: " PORT
+  if [ "$PORT" == "exit" ]; then
+    echo "[*] Exiting..."
+    break
+  elif [[ $PORT =~ ^[0-9]+$ ]]; then
+    echo "Port Entered: $PORT"
+  else
+    echo "[!] Invalid input. Please enter a valid port number."
+  fi
+done
+
+# End script
+LED OFF
