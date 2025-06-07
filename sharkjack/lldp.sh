@@ -1,3 +1,4 @@
+#!/bin/bash
 # Nom: lldp.sh
 # Autor: carquinyolis
 # V: 1.2
