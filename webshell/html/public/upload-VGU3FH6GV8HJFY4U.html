@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chunked File Upload with SHA-1</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; }
+    #status { margin-top: 1rem; }
+    #progress { margin-top: 1rem; font-size: 1.2rem; }
+    #hash { margin-top: 1rem; color: green; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+  <h2>Upload Files (Chunked, SHA-1 Verified)</h2>
+  <form id="uploadForm">
+    <input type="file" id="fileInput" name="file" multiple required />
+    <button type="submit">Pujar</button>
+  </form>
+
+  <div id="status"></div>
+  <div id="progress"></div>
+  <div id="hash"></div>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const statusDiv = document.getElementById("status");
+    const progressDiv = document.getElementById("progress");
+    const hashDiv = document.getElementById("hash");
+
+    const MAX_RETRIES = 3;
+    const CHUNK_SIZE = 20 * 1024 * 1024;
+
+    async function sha1(blob) {
+      const buffer = await blob.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-1", buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function uploadChunkWithRetry(file, index, totalChunks) {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          await uploadChunk(file, index, totalChunks);
+          return;
+        } catch (err) {
+          if (attempt === MAX_RETRIES) throw `Chunk ${index} failed after ${MAX_RETRIES} tries: ${err}`;
+          statusDiv.textContent = `Chunk ${index + 1} failed (try ${attempt}). Retrying...`;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    }
+
+    async function uploadChunk(file, i, totalChunks) {
+      const start = i * CHUNK_SIZE;
+      const chunk = file.slice(start, start + CHUNK_SIZE);
+      const chunkHash = await sha1(chunk);
+
+      const formData = new FormData();
+      formData.append("chunk", chunk);
+      formData.append("chunkIndex", i);
+      formData.append("totalChunks", totalChunks);
+      formData.append("filename", file.name);
+      formData.append("chunkHash", chunkHash);
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const chunkProgress = event.loaded / event.total;
+            const totalProgress = ((i + chunkProgress) / totalChunks) * 100;
+            progressDiv.textContent = `${file.name} — Progress: ${Math.round(totalProgress)}%`;
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve();
+          } else if (xhr.status === 400 && xhr.responseText.includes("Chunk hash mismatch")) {
+            reject("Hash mismatch");
+          } else {
+            reject(`Upload failed (${xhr.status}): ${xhr.responseText}`);
+          }
+        };
+
+        xhr.onerror = () => reject(`Chunk ${i} network error`);
+        xhr.open("POST", "/upload-chunk-558676752", true);
+        xhr.send(formData);
+      });
+    }
+
+    async function uploadSingleFile(file) {
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      for (let i = 0; i < totalChunks; i++) {
+        statusDiv.textContent = `${file.name} — chunk ${i + 1} de ${totalChunks}`;
+        await uploadChunkWithRetry(file, i, totalChunks);
+      }
+
+      statusDiv.textContent = `Ajuntant fitxer ${file.name}...`;
+
+      const response = await fetch("/assemble-6326476954", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          fileHash: "skip",
+          totalChunks: totalChunks
+        }),
+      });
+
+      const text = await response.text();
+
+      if (response.ok) {
+        statusDiv.textContent = `${file.name} pujat correctament.`;
+        hashDiv.textContent += `${file.name}: Finalitzat\n`;
+      } else {
+        throw new Error(text);
+      }
+
+      progressDiv.textContent = `${file.name} — Progrés: 100%`;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const files = document.getElementById("fileInput").files;
+      for (const file of files) {
+        try {
+          await uploadSingleFile(file);
+        } catch (err) {
+          statusDiv.textContent = `Error amb ${file.name}: ${err}`;
+        }
+      }
+    });
+  </script>
+</body>
+</html>
+
